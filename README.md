@@ -1,6 +1,6 @@
-Steps to build Multi Agent RAG system
-Step 1: Install the dependencies
-Step 2: import the packages
+# Steps to build Multi Agent RAG system
+# Step 1: Install the dependencies
+# Step 2: import the packages
 Step 3: assign the OpenAI secret key from the colab secret key
 Step 4: Load llm using ChatOpenAI
 Step 5: main module :Create vector stores using chroma db.
