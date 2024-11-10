@@ -17,7 +17,7 @@ import getpass  # For secure password input during signup
 
 load_dotenv()  # Load environment variables from .env file
 
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Or set directly
+os.environ['OPENAI_API_KEY'] = os.getenv("OA_API")  # Or set directly
 llm = ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo")
 
 def classify_query(query: str) -> str:

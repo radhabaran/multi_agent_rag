@@ -1,4 +1,14 @@
 # vector_store.py
+
+import sqlite3
+from packaging import version
+import sys
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 import logging
 from pathlib import Path
 import chromadb
