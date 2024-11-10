@@ -1,3 +1,6 @@
+# SQLite requirement
+pysqlite3-binary>=0.5.0
+
 # LangChain components
 langchain>=0.1.0
 langchain-core>=0.1.0
