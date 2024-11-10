@@ -58,10 +58,10 @@ def main():
     initialize_session_state()
     
     # User authentication
-    if "username" not in st.session_state:
-        st.session_state.username = None
+    # if "username" not in st.session_state:
+    #     st.session_state.username = None
 
-    if st.session_state.username is None:
+    if st.session_state.username == '':
         auth_option = st.radio("Login or Signup:", ("Login", "Signup"))
         if auth_option == "Login":
             username = st.text_input("Username")
