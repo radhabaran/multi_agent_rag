@@ -37,27 +37,29 @@ def initialize_session_state():
 
 
 def initialize_vector_stores():
+    """Initialize vector stores and store them in session state."""
     try:
         # Check if files exist before creating vectorstores
         finance_path = Path("./data/finance.pdf")
         public_path = Path("./data/public.pdf")
-    
+
         if not finance_path.exists():
             logger.error(f"Finance document not found at {finance_path}")
-            finance_vectorstore = None
+            st.session_state.finance_vectorstore = None  # Explicitly set to None
         else:
-            finance_vectorstore = create_vector_store(str(finance_path), "finance")
+            st.session_state.finance_vectorstore = create_vector_store(str(finance_path), "finance")
 
         if not public_path.exists():
             logger.error(f"Public document not found at {public_path}")
-            public_vectorstore = None
+            st.session_state.public_vectorstore = None  # Explicitly set to None
         else:
-            public_vectorstore = create_vector_store(str(public_path), "public")
+            st.session_state.public_vectorstore = create_vector_store(str(public_path), "public")
 
     except Exception as e:
         logger.error(f"Failed to initialize vectorstores: {str(e)}")
-        finance_vectorstore = None
-        public_vectorstore = None
+        st.session_state.finance_vectorstore = None  # Handle exceptions
+        st.session_state.public_vectorstore = None
+
 
 def rag_pipeline(query: str, username: str):
     """Main RAG pipeline."""
@@ -207,6 +209,7 @@ def main():
         pd.DataFrame(columns=["username", "password", "role"]).to_csv("users.csv", index=False)
     
     initialize_session_state()
+    initialize_vector_stores()
     
     if not st.session_state.authenticated:
         render_auth_forms()
