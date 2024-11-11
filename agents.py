@@ -53,8 +53,13 @@ def retrieve_data(query: str) -> str:
         
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
         docs = retriever.get_relevant_documents(query)
-        context = "\n".join([doc.page_content for doc in docs])
-        prompt = f"Context:\n{context}\n\nQuestion:\n{query}\n\nAnswer:"
+        context = "\n\n".join([doc.page_content for doc in docs])
+        # Construct a structured prompt dictionary
+        prompt = {
+            "query": query,
+            "context": context,
+            "instructions": "Answer the query using the provided context. If the answer is not contained within the context, say 'I don't know.' Be concise and extract relevant information from the context."
+        }
         return prompt
     except Exception as e:
         logger.error(f"Error in retrieve_data: {str(e)}")
@@ -63,7 +68,21 @@ def retrieve_data(query: str) -> str:
 
 def generate_response(prompt: str) -> str:
     """Generates the final response using the LLM."""
-    response = llm.invoke(prompt)
+
+    prompt_template = """
+    Instructions: {instructions}
+
+    Query: {query}
+
+    Context:
+    {context}
+
+    Answer:
+    """
+
+    final_prompt = PromptTemplate(template=prompt_template, 
+                                  input_variables=["query", "context", "instructions"]).format(**prompt)
+    response = llm.invoke(final_prompt)
     return response
 
 
