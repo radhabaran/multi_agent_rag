@@ -33,6 +33,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()  # Load environment variables from .env file
 
+# Global context for storing vectorstore
+retrieval_context = {'vectorstore': None}
+
 os.environ['OPENAI_API_KEY'] = os.getenv("OA_API")  # Or set directly
 llm = ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo")
 
@@ -57,28 +60,47 @@ def access_check(username: str) -> str:
 def retrieve_data(query: str) -> str:
     try:
         vectorstore = retrieval_context['vectorstore']
-        print(f" vectorstore: {vectorstore}")
+        print("vectorstore:", vectorstore)
+        print("test" * 20)
+    
         if vectorstore is None:
             return "Error: Vectorstore not initialized!"
 
         retriever = vectorstore.as_retriever(search_type="mmr", k=3)
-        
-        retrieval_chain = RunnableParallel(
-            {
-                "context": RunnablePassthrough(context=lambda x: x["question"] | retriever),
-                "question": RunnablePassthrough()
-            }
+        # Get documents directly from retriever
+        docs = retriever.invoke(query)
+    
+        # Log document details
+        print("\n=== Retrieved Documents ===")
+        for i, doc in enumerate(docs, 1):
+            # Handle both Document objects and tuples
+            print("test" * 20)
+            if isinstance(doc, tuple):
+                content = doc[0]  # First element is usually the content
+                metadata = doc[1] if len(doc) > 1 else {}  # Second element is metadata
+            else:
+                content = doc.page_content
+                metadata = doc.metadata
+                
+            print(f"\nDocument {i}:")
+            print(f"Content: {content}")
+            print(f"Metadata: {metadata}")
+            print("-" * 50)
+
+       # Extract and combine the content from documents
+        context = "\n".join(
+            doc[0] if isinstance(doc, tuple) else doc.page_content 
+            for doc in docs
         )
         
-        retrieved_data = retrieval_chain.invoke({"question": query})
         
         prompt = f"""Answer the query using the provided context. If the answer is not contained
         within the context, say 'I don't know.' Be concise and extract relevant information from 
         the context.
 
-        Query: {retrieved_data["question"]}
+        Query: {query}
 
-        Context: {retrieved_data["context"]}
+        Context: {context}
         """
         
         return prompt
@@ -95,9 +117,6 @@ def generate_response(prompt: str) -> str:
     response = llm.invoke(prompt)
     return response
 
-
-# Global context for storing vectorstore
-retrieval_context = {'vectorstore': None}
 
 # Create tools for the agent
 #
