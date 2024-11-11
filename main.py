@@ -34,14 +34,21 @@ def initialize_session_state():
 
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
-
+    
+    if "vectorstores_initialized" not in st.session_state:
+        st.session_state.vectorstores_initialized = False
+        
+    # Only initialize vectorstores once
+    if not st.session_state.vectorstores_initialized:
+        initialize_vector_stores()
+        st.session_state.vectorstores_initialized = True
 
 def initialize_vector_stores():
     """Initialize vector stores and store them in session state."""
     try:
         # Check if files exist before creating vectorstores
-        finance_path = Path("./data/finance.pdf")
-        public_path = Path("./data/public.pdf")
+        finance_path = Path("./docs/finance_data.pdf")
+        public_path = Path("./docs/public_data.pdf")
 
         if not finance_path.exists():
             logger.error(f"Finance document not found at {finance_path}")

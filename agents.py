@@ -1,4 +1,14 @@
 # agents.py
+
+import sqlite3
+from packaging import version
+import sys
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 import os
 import logging
 import openai
@@ -10,6 +20,7 @@ from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
 from langchain.agents import initialize_agent, Tool
 from langchain.agents import AgentType
+from langchain.schema.runnable import RunnableParallel, RunnablePassthrough 
 from typing import List, Dict, Any
 import pandas as pd
 from langchain.prompts import PromptTemplate
@@ -44,45 +55,44 @@ def access_check(username: str) -> str:
 
 
 def retrieve_data(query: str) -> str:
-    """Retrieves relevant documents and augments the prompt."""
-
     try:
-        # Get vectorstore from the global variable
-    
         vectorstore = retrieval_context['vectorstore']
+        print(f" vectorstore: {vectorstore}")
+        if vectorstore is None:
+            return "Error: Vectorstore not initialized!"
+
+        retriever = vectorstore.as_retriever(search_type="mmr", k=3)
         
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        docs = retriever.get_relevant_documents(query)
-        context = "\n\n".join([doc.page_content for doc in docs])
-        # Construct a structured prompt dictionary
-        prompt = {
-            "query": query,
-            "context": context,
-            "instructions": "Answer the query using the provided context. If the answer is not contained within the context, say 'I don't know.' Be concise and extract relevant information from the context."
-        }
+        retrieval_chain = RunnableParallel(
+            {
+                "context": RunnablePassthrough(context=lambda x: x["question"] | retriever),
+                "question": RunnablePassthrough()
+            }
+        )
+        
+        retrieved_data = retrieval_chain.invoke({"question": query})
+        
+        prompt = f"""Answer the query using the provided context. If the answer is not contained
+        within the context, say 'I don't know.' Be concise and extract relevant information from 
+        the context.
+
+        Query: {retrieved_data["question"]}
+
+        Context: {retrieved_data["context"]}
+        """
+        
         return prompt
+        
     except Exception as e:
         logger.error(f"Error in retrieve_data: {str(e)}")
         return f"Error retrieving data: {str(e)}"
 
 
 def generate_response(prompt: str) -> str:
-    """Generates the final response using the LLM."""
-
-    prompt_template = """
-    Instructions: {instructions}
-
-    Query: {query}
-
-    Context:
-    {context}
-
-    Answer:
-    """
-
-    final_prompt = PromptTemplate(template=prompt_template, 
-                                  input_variables=["query", "context", "instructions"]).format(**prompt)
-    response = llm.invoke(final_prompt)
+    print(f"Prompt in generate_response: {prompt}")
+    print(f"Type of prompt: {type(prompt)}")
+    
+    response = llm.invoke(prompt)
     return response
 
 
