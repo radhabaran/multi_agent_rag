@@ -78,3 +78,11 @@ tools = [
         return_direct = True
     )
 ]
+
+# Initialize the agent once
+agent = initialize_agent(
+    tools, 
+    llm, 
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
+    verbose=True
+)
