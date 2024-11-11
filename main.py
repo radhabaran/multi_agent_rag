@@ -3,6 +3,9 @@ import streamlit as st
 import pandas as pd
 import os
 from pathlib import Path
+from typing import Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 # LangChain imports
 from langchain.agents import AgentType
@@ -10,29 +13,51 @@ from langchain.chat_models import ChatOpenAI
 
 # Local imports
 from vector_store import create_vector_store
-from agents import (classify_query, access_check, retrieve_data, generate_response, 
-                    llm, tools, agent)  # Import tools
+from agents import agent, retrieval_context, classify_query, access_check
 
+# Ensure data directory exists
+os.makedirs("./data", exist_ok=True)
 
 def initialize_session_state():
     """Initialize session state variables."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
+        
     if "username" not in st.session_state:
         st.session_state.username = ""
+
     if "query" not in st.session_state:
         st.session_state.query = ""
+
     if "auth_option" not in st.session_state:
         st.session_state.auth_option = "Login"
 
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+
 
 def initialize_vector_stores():
-    """Initialize vector stores if not already in session state."""
-    if "finance_vectorstore" not in st.session_state:
-        st.session_state.finance_vectorstore = create_vector_store(
-            "./data/finance_data.pdf", "finance_data")
-        st.session_state.public_vectorstore = create_vector_store(
-            "./data/public_data.pdf", "public_data")
+    try:
+        # Check if files exist before creating vectorstores
+        finance_path = Path("./data/finance.pdf")
+        public_path = Path("./data/public.pdf")
+    
+        if not finance_path.exists():
+            logger.error(f"Finance document not found at {finance_path}")
+            finance_vectorstore = None
+        else:
+            finance_vectorstore = create_vector_store(str(finance_path), "finance")
+
+        if not public_path.exists():
+            logger.error(f"Public document not found at {public_path}")
+            public_vectorstore = None
+        else:
+            public_vectorstore = create_vector_store(str(public_path), "public")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize vectorstores: {str(e)}")
+        finance_vectorstore = None
+        public_vectorstore = None
 
 def rag_pipeline(query: str, username: str):
     """Main RAG pipeline."""
@@ -52,10 +77,13 @@ def rag_pipeline(query: str, username: str):
                   if query_type == "finance" 
                   else st.session_state.public_vectorstore)
 
-    # Use the pre-initialized agent from agents.py
-    final_response = agent.run(query=query, vectorstore=vectorstore) # Pass vectorstore to the agent
+    # Set the vectorstore in the global context for the agent to use
+    retrieval_context['vectorstore'] = vectorstore
+        
+    # Invoke the agent with just the query
+    response = agent.invoke({"input": query})
+    return response["output"]
 
-    return final_response
 
 def handle_authentication(username: str, password: str) -> bool:
     """Handle user authentication."""
@@ -94,71 +122,96 @@ def handle_signup(username: str, password: str, user_type: str) -> bool:
     return True
 
 
-# Steps for Streamlit UI
-def main():
-    """Streamlit web application."""
-    st.title("Secure RAG System")
-
-    # Initialize session state
-    initialize_session_state()
-    initialize_vector_stores()
+def render_auth_forms():
+    """Render authentication forms."""
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.write(f"Current option: {st.session_state.auth_option}")
     
-    # Query input field (always visible)
-    query = st.text_input("Enter your query:", key="query_input")
-
-    # Authentication section
-    if not st.session_state.username:
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Login Mode"):
-                st.session_state.auth_option = "Login"
-        with col2:
-            if st.button("Signup Mode"):
-                st.session_state.auth_option = "Signup"
-
-        if st.session_state.auth_option == "Login":
-            with st.form("login_form"):
-                username = st.text_input("Username")
-                password = st.text_input("Password", type="password")
-                submit_login = st.form_submit_button("Login")
-
-                if submit_login:
-                    if handle_authentication(username, password):
-                        st.session_state.username = username
-                        st.success("Logged in successfully!")
-                        st.rerun()
-                    else:
-                        st.error("Invalid credentials.")
-
-        else:  # Signup mode
-            with st.form("signup_form"):
-                new_username = st.text_input("New Username")
-                new_password = st.text_input("New Password", type="password")
-                user_type = st.selectbox("User Type", ["user", "admin"])
-                submit_signup = st.form_submit_button("Signup")
-
-                if submit_signup:
-                    if handle_signup(new_username, new_password, user_type):
-                        st.success("Signup successful! Please login.")
-                        st.session_state.auth_option = "Login"
-                        st.rerun()
-
-    else:
-        # User is logged in
-        st.write(f"Logged in as: {st.session_state.username}")
-        
-        if query:  # Process query if input exists
-            response = rag_pipeline(query, st.session_state.username)
-            st.write("Response:")
-            st.write(response)
-
-        if st.button("Logout"):
-            st.session_state.username = ""
-            st.session_state.query = ""
+    with col2:
+        if st.button("Switch to Login" if st.session_state.auth_option == "Sign Up" else "Switch to Sign Up"):
+            st.session_state.auth_option = "Sign Up" if st.session_state.auth_option == "Login" else "Login"
             st.rerun()
 
-if __name__ == "__main__":
-    # Ensure the users.csv file exists
+    with st.form(key="auth_form"):
+        username = st.text_input("Username").strip()
+        password = st.text_input("Password", type="password").strip()
+        
+        if st.session_state.auth_option == "Sign Up":
+            role = st.selectbox("Role", ["user", "admin"])
+            submit_button = st.form_submit_button("Sign Up")
+            
+            if submit_button:
+                if not username or not password:
+                    st.error("Username and password are required!")
+                elif handle_signup(username, password, role):
+                    st.success("Sign up successful! Please login.")
+                    st.session_state.auth_option = "Login"
+                    st.rerun()
+                else:
+                    st.error("Username already exists!")
+        else:
+            submit_button = st.form_submit_button("Login")
+            
+            if submit_button:
+                if not username or not password:
+                    st.error("Username and password are required!")
+                elif handle_authentication(username, password):
+                    st.session_state.username = username
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials!")
+
+
+def render_chat_interface():
+    """Render chat interface."""
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.write(f"Logged in as: {st.session_state.username}")
+    
+    with col2:
+        if st.button("Logout"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    # Display chat messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat input
+    if prompt := st.chat_input("What would you like to know?"):
+        prompt = prompt.strip()
+        if prompt:  # Only process non-empty prompts
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    response = rag_pipeline(prompt, st.session_state.username)
+                st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+
+
+# Steps for Streamlit UI
+def main():
+    """Main function."""
+    st.set_page_config(page_title="Secure RAG Chatbot", page_icon="🤖", layout="wide")
+    st.title("🤖 Secure RAG Chatbot")
+    
+    # Initialize users.csv if it doesn't exist
     if not Path("users.csv").exists():
         pd.DataFrame(columns=["username", "password", "role"]).to_csv("users.csv", index=False)
+    
+    initialize_session_state()
+    
+    if not st.session_state.authenticated:
+        render_auth_forms()
+    else:
+        render_chat_interface()
+
+if __name__ == "__main__":
     main()

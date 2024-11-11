@@ -1,5 +1,6 @@
 # agents.py
 import os
+import logging
 import openai
 import chromadb
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -13,8 +14,12 @@ from typing import List, Dict, Any
 import pandas as pd
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
+from pathlib import Path
 import getpass  # For secure password input during signup
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 load_dotenv()  # Load environment variables from .env file
 
 os.environ['OPENAI_API_KEY'] = os.getenv("OA_API")  # Or set directly
@@ -38,20 +43,32 @@ def access_check(username: str) -> str:
         return "guest" # Default to guest if user data is unavailable
 
 
-def retrieve_data(query: str, vectorstore: Chroma):
+def retrieve_data(query: str) -> str:
     """Retrieves relevant documents and augments the prompt."""
-    # Use MMR for diverse results (experiment with different fetch_k values)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-    docs = retriever.get_relevant_documents(query)
-    context = "\n".join([doc.page_content for doc in docs])
-    prompt = f"Context:\n{context}\n\nQuestion:\n{query}\n\nAnswer:"
-    return prompt
+
+    try:
+        # Get vectorstore from the global variable
+    
+        vectorstore = retrieval_context['vectorstore']
+        
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        docs = retriever.get_relevant_documents(query)
+        context = "\n".join([doc.page_content for doc in docs])
+        prompt = f"Context:\n{context}\n\nQuestion:\n{query}\n\nAnswer:"
+        return prompt
+    except Exception as e:
+        logger.error(f"Error in retrieve_data: {str(e)}")
+        return f"Error retrieving data: {str(e)}"
 
 
 def generate_response(prompt: str) -> str:
     """Generates the final response using the LLM."""
-    response = llm(prompt)
+    response = llm.invoke(prompt)
     return response
+
+
+# Global context for storing vectorstore
+retrieval_context = {'vectorstore': None}
 
 # Create tools for the agent
 #
