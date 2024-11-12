@@ -1,8 +1,18 @@
 # main.py
+import sqlite3
 import streamlit as st
 import pandas as pd
 import os
+import sys
+
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 from pathlib import Path
+import chromadb
 from typing import Tuple
 import logging
 logger = logging.getLogger(__name__)
@@ -10,9 +20,10 @@ logger = logging.getLogger(__name__)
 # LangChain imports
 from langchain.agents import AgentType
 from langchain.chat_models import ChatOpenAI
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
 
 # Local imports
-from vector_store import create_vector_store
 from agents import agent, retrieval_context, classify_query, access_check
 
 # Ensure data directory exists
@@ -44,27 +55,27 @@ def initialize_session_state():
         st.session_state.vectorstores_initialized = True
 
 def initialize_vector_stores():
-    """Initialize vector stores and store them in session state."""
+    """Initialize vector stores by loading existing ones."""
     try:
-        # Check if files exist before creating vectorstores
-        finance_path = Path("./docs/finance_data.pdf")
-        public_path = Path("./docs/public_data.pdf")
+        # Initialize embeddings
+        embeddings = OpenAIEmbeddings()
 
-        if not finance_path.exists():
-            logger.error(f"Finance document not found at {finance_path}")
-            st.session_state.finance_vectorstore = None  # Explicitly set to None
-        else:
-            st.session_state.finance_vectorstore = create_vector_store(str(finance_path), "finance")
-
-        if not public_path.exists():
-            logger.error(f"Public document not found at {public_path}")
-            st.session_state.public_vectorstore = None  # Explicitly set to None
-        else:
-            st.session_state.public_vectorstore = create_vector_store(str(public_path), "public")
+        # Load existing vector stores
+        st.session_state.finance_vectorstore = Chroma(
+            persist_directory="./data/finance",
+            collection_name="finance",
+            embedding_function=embeddings
+        )
+        
+        st.session_state.public_vectorstore = Chroma(
+            persist_directory="./data/public",
+            collection_name="public",
+            embedding_function=embeddings
+        )
 
     except Exception as e:
         logger.error(f"Failed to initialize vectorstores: {str(e)}")
-        st.session_state.finance_vectorstore = None  # Handle exceptions
+        st.session_state.finance_vectorstore = None
         st.session_state.public_vectorstore = None
 
 
@@ -216,7 +227,6 @@ def main():
         pd.DataFrame(columns=["username", "password", "role"]).to_csv("users.csv", index=False)
     
     initialize_session_state()
-    initialize_vector_stores()
     
     if not st.session_state.authenticated:
         render_auth_forms()
