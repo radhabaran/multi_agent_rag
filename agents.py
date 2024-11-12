@@ -57,11 +57,10 @@ def access_check(username: str) -> str:
         return "guest" # Default to guest if user data is unavailable
 
 
-def retrieve_data(query: str) -> str:
+def retrieve_and_generate(query: str) -> str:
     try:
+        # Step1 : Retrieve documents
         vectorstore = retrieval_context['vectorstore']
-        print("vectorstore:", vectorstore)
-        print("test" * 20)
     
         if vectorstore is None:
             return "Error: Vectorstore not initialized!"
@@ -69,53 +68,52 @@ def retrieve_data(query: str) -> str:
         retriever = vectorstore.as_retriever(search_type="mmr", k=3)
         # Get documents directly from retriever
         docs = retriever.invoke(query)
-    
-        # Log document details
-        print("\n=== Retrieved Documents ===")
-        for i, doc in enumerate(docs, 1):
-            # Handle both Document objects and tuples
-            print("test" * 20)
-            if isinstance(doc, tuple):
-                content = doc[0]  # First element is usually the content
-                metadata = doc[1] if len(doc) > 1 else {}  # Second element is metadata
-            else:
-                content = doc.page_content
-                metadata = doc.metadata
-                
-            print(f"\nDocument {i}:")
-            print(f"Content: {content}")
-            print(f"Metadata: {metadata}")
-            print("-" * 50)
-
+            
        # Extract and combine the content from documents
         context = "\n".join(
             doc[0] if isinstance(doc, tuple) else doc.page_content 
             for doc in docs
         )
         
-        
-        prompt = f"""Answer the query using the provided context. If the answer is not contained
+        # Step 2: Format prompt and generate response
+        # Define template
+        template = """Respond to the query using the provided context. If the answer is not contained
         within the context, say 'I don't know.' Be concise and extract relevant information from 
         the context.
 
         Query: {query}
 
         Context: {context}
-        """
+
+        Answer:"""
+
+        # Format the template with actual values
+        formatted_prompt = template.format(
+            query=query,
+            context=context
+        )
         
-        return prompt
+        # Step 3: Generate response
+        messages = [
+            {
+                "role": "user",
+                "content": formatted_prompt
+            }
+        ]
         
+        response = llm.invoke(messages)
+        
+        if hasattr(response, 'content'):
+            return response.content
+        elif isinstance(response, dict) and 'content' in response:
+            return response['content']
+        else:
+            return str(response)
+            
     except Exception as e:
-        logger.error(f"Error in retrieve_data: {str(e)}")
-        return f"Error retrieving data: {str(e)}"
+        logger.error(f"Error in retrieve_and_generate: {str(e)}")
+        return f"Error processing query: {str(e)}"
 
-
-def generate_response(prompt: str) -> str:
-    print(f"Prompt in generate_response: {prompt}")
-    print(f"Type of prompt: {type(prompt)}")
-    
-    response = llm.invoke(prompt)
-    return response
 
 
 # Create tools for the agent
@@ -131,23 +129,18 @@ def generate_response(prompt: str) -> str:
 
 tools = [
     Tool(
-        name="Data Retriever",
-        func=retrieve_data,
-        description="Retrieves relevant context from the vector store based on the query. Use this tool first to gather information.",
-        return_direct = False
-    ),
-    Tool(
-        name="Q&A Agent",
-        func=generate_response,
-        description="Generates natural language responses using the retrieved context and original question. Use this after getting context.",
+        name="Knowledge Base QA",
+        func=retrieve_and_generate,
+        description="Use this tool to pass the user query to the appropriate knowledge base. This tool will retrieve relevant information and generate a helpful response based on the context.",
         return_direct = True
-    )
-]
+        ),
+    ]
 
 # Initialize the agent once
 agent = initialize_agent(
     tools, 
     llm, 
     agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
-    verbose=True
+    verbose=True,
+    handle_parsing_errors=True
 )
