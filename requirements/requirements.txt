@@ -15,6 +15,7 @@ tiktoken>=0.5.1
 
 # Document handling
 python-dotenv>=1.0.0
+pypdf
 PyPDF2>=3.0.1
 
 # Type checking
